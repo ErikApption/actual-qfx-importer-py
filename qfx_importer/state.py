@@ -339,6 +339,8 @@ class ImportState(AppState):
         from actual import Actual
         from actual import queries as actual_queries
 
+        os.makedirs(data_dir, exist_ok=True)
+
         for upload_file in files:
             filename = upload_file.filename
             content = await upload_file.read()
@@ -359,7 +361,6 @@ class ImportState(AppState):
                 continue
 
             try:
-                os.makedirs(data_dir, exist_ok=True)
                 with Actual(
                     base_url=base_url,
                     password=actual_password,
