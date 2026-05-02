@@ -16,17 +16,19 @@ Built with [Reflex](https://reflex.dev/) and [actualpy](https://github.com/bvane
 
 - Python 3.10+
 - A running [Actual Budget server](https://actualbudget.org/docs/install/)
+- [Poetry](https://python-poetry.org/) for dependency management
 
 ## Installation
 
 ```bash
-pip install -r requirements.txt
+pip install poetry          # install Poetry if not already available
+poetry install              # install all dependencies (incl. dev)
 ```
 
 ## Running
 
 ```bash
-reflex run
+poetry run reflex run
 ```
 
 On the first run the server prints a setup token to the console:
@@ -40,6 +42,17 @@ On the first run the server prints a setup token to the console:
 ```
 
 Open `http://localhost:3000/setup` in your browser, enter the token, and set a password.
+
+## Running Tests
+
+```bash
+poetry run pytest
+```
+
+Tests cover:
+- `TestParseQfx` – pure QFX/OFX file parsing (no database required)
+- `TestImportTransactions` – posting parsed transactions into a minimal Actual Budget SQLite DB (no live server required)
+- `TestEndToEndActualZip` – loading an `.actual` zip file and importing QFX transactions end-to-end (Actual server connection mocked)
 
 ## Technology Stack
 

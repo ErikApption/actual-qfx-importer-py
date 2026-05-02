@@ -2,10 +2,8 @@
 import logging
 import os
 import secrets
-from io import BytesIO
 from typing import Optional
 
-import ofxparse
 import reflex as rx
 from passlib.context import CryptContext
 from sqlmodel import Session, select
@@ -17,6 +15,7 @@ from qfx_importer.database import (
     hash_token,
     verify_token,
 )
+from qfx_importer.importer import parse_qfx, import_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -341,30 +340,26 @@ class ImportState(AppState):
             return
 
         from actual import Actual
-        from actual import queries as actual_queries
+        from actual.database import Accounts
+        from sqlmodel import select as sa_select
 
         os.makedirs(data_dir, exist_ok=True)
 
         for upload_file in files:
             filename = upload_file.filename
             content = await upload_file.read()
-            count = 0
-            file_errors: list[str] = []
 
+            # 1. Parse QFX/OFX content
             try:
-                ofx = ofxparse.OfxParser.parse(BytesIO(content))
-                raw_account = ofx.account
-                if raw_account is None:
-                    accounts = []
-                elif isinstance(raw_account, list):
-                    accounts = [a for a in raw_account if a is not None]
-                else:
-                    accounts = [raw_account]
+                parsed_accounts = parse_qfx(content)
             except Exception as exc:
                 logger.error("QFX parse error for %s: %s", filename, exc)
-                self.import_errors.append(f"{filename}: failed to parse file. Check the server logs for details.")
+                self.import_errors.append(
+                    f"{filename}: failed to parse file. Check the server logs for details."
+                )
                 continue
 
+            # 2. Connect to Actual and import
             try:
                 with Actual(
                     base_url=base_url,
@@ -374,39 +369,50 @@ class ImportState(AppState):
                     data_dir=data_dir,
                     cert=actual_cert,
                 ) as a:
-                    for account in accounts:
-                        account_id = getattr(account, "account_id", None) or "Unknown"
-                        transactions = account.statement.transactions
-                        for txn in transactions:
-                            try:
-                                actual_queries.create_transaction(
-                                    a.session,
-                                    date=txn.date.date()
-                                    if hasattr(txn.date, "date")
-                                    else txn.date,
-                                    account=account_id,
-                                    payee=getattr(txn, "payee", None) or None,
-                                    notes=getattr(txn, "memo", None) or "",
-                                    amount=float(txn.amount),
-                                    imported_id=getattr(txn, "id", None) or None,
-                                    imported_payee=getattr(txn, "payee", None) or None,
-                                )
-                                count += 1
-                            except Exception as exc:
-                                logger.warning("Transaction import error in %s: %s", filename, exc)
-                                file_errors.append("A transaction could not be imported (see server logs).")
+                    for parsed_account in parsed_accounts:
+                        # Resolve account by account_id (name or id)
+                        account_obj = a.session.exec(
+                            sa_select(Accounts).where(
+                                Accounts.name == parsed_account.account_id
+                            )
+                        ).first() or a.session.exec(
+                            sa_select(Accounts).where(
+                                Accounts.id == parsed_account.account_id
+                            )
+                        ).first()
+
+                        if account_obj is None:
+                            logger.warning(
+                                "Account %r not found in Actual for file %s",
+                                parsed_account.account_id,
+                                filename,
+                            )
+                            self.import_errors.append(
+                                f"{filename}: account '{parsed_account.account_id}' not found in Actual Budget."
+                            )
+                            continue
+
+                        result = import_transactions(
+                            a.session,
+                            account_obj,
+                            parsed_account.transactions,
+                            filename=filename,
+                        )
+                        self.import_results.append(
+                            f"{filename}: imported {result.imported_count} transaction(s)."
+                        )
+                        if result.errors:
+                            self.import_errors.extend(
+                                [f"{filename} row error: {e}" for e in result.errors[:5]]
+                            )
                     a.commit()
             except Exception as exc:
-                logger.error("Actual connection error while importing %s: %s", filename, exc)
-                self.import_errors.append(f"{filename}: failed to connect to Actual Budget. Check Settings and server logs.")
-                continue
-
-            self.import_results.append(
-                f"{filename}: imported {count} transaction(s)."
-            )
-            if file_errors:
-                self.import_errors.extend(
-                    [f"{filename} row error: {e}" for e in file_errors[:5]]
+                logger.error(
+                    "Actual connection error while importing %s: %s", filename, exc
                 )
+                self.import_errors.append(
+                    f"{filename}: failed to connect to Actual Budget. Check Settings and server logs."
+                )
+                continue
 
         self.is_importing = False
