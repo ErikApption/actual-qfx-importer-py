@@ -1,4 +1,5 @@
 """Application state for qfx_importer."""
+import logging
 import os
 import secrets
 from io import BytesIO
@@ -16,6 +17,8 @@ from qfx_importer.database import (
     hash_token,
     verify_token,
 )
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -102,8 +105,8 @@ class SetupState(AppState):
         if self.new_password != self.confirm_password:
             self.error = "Passwords do not match."
             return
-        if len(self.new_password) < 8:
-            self.error = "Password must be at least 8 characters."
+        if len(self.new_password) < 12:
+            self.error = "Password must be at least 12 characters."
             return
         with Session(engine) as session:
             config = get_config(session)
@@ -219,7 +222,8 @@ class SettingsState(AppState):
             self.status_msg = "Connection successful!"
             self.status_ok = True
         except Exception as exc:
-            self.status_msg = f"Connection failed: {exc}"
+            logger.error("Actual connection test failed: %s", exc)
+            self.status_msg = "Connection failed. Check your settings and server logs for details."
             self.status_ok = False
 
 
@@ -277,8 +281,8 @@ class ApiKeyState(AppState):
         if self.new_password != self.confirm_password:
             self.pw_msg = "Passwords do not match."
             return
-        if len(self.new_password) < 8:
-            self.pw_msg = "Password must be at least 8 characters."
+        if len(self.new_password) < 12:
+            self.pw_msg = "Password must be at least 12 characters."
             return
         with Session(engine) as session:
             config = get_config(session)
@@ -357,7 +361,8 @@ class ImportState(AppState):
                 else:
                     accounts = [raw_account]
             except Exception as exc:
-                self.import_errors.append(f"{filename}: parse error – {exc}")
+                logger.error("QFX parse error for %s: %s", filename, exc)
+                self.import_errors.append(f"{filename}: failed to parse file. Check the server logs for details.")
                 continue
 
             try:
@@ -388,10 +393,12 @@ class ImportState(AppState):
                                 )
                                 count += 1
                             except Exception as exc:
-                                file_errors.append(str(exc))
+                                logger.warning("Transaction import error in %s: %s", filename, exc)
+                                file_errors.append("A transaction could not be imported (see server logs).")
                     a.commit()
             except Exception as exc:
-                self.import_errors.append(f"{filename}: connection error – {exc}")
+                logger.error("Actual connection error while importing %s: %s", filename, exc)
+                self.import_errors.append(f"{filename}: failed to connect to Actual Budget. Check Settings and server logs.")
                 continue
 
             self.import_results.append(

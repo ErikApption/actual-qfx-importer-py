@@ -98,7 +98,7 @@ def api_key_page() -> rx.Component:
                         rx.vstack(
                             rx.text("New Password", size="2", weight="medium"),
                             rx.input(
-                                placeholder="At least 8 characters",
+                                placeholder="At least 12 characters",
                                 type="password",
                                 value=ApiKeyState.new_password,
                                 on_change=ApiKeyState.set_new_password,

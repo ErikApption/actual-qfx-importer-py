@@ -217,6 +217,14 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Reflex build artifacts
+.web/
+.reflex/
+
+# Application data (SQLite DB and Actual Budget local files)
+data/app.db
+data/actual/
+
 # QFX Importer data
 data/*.db
 data/actual/

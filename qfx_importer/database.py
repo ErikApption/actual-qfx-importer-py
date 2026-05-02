@@ -32,7 +32,13 @@ class AppConfig(SQLModel, table=True):
 
 
 def hash_token(token: str) -> str:
-    """SHA-256 hash a random token (for session tokens and API keys)."""
+    """SHA-256 hash a random token (for session tokens and API keys).
+
+    These tokens are generated with secrets.token_urlsafe(32) which gives
+    256 bits of entropy, making rainbow-table / pre-image attacks infeasible.
+    A salt is therefore not required (unlike password hashing where inputs are
+    low-entropy and must be salted with bcrypt/argon2).
+    """
     return hashlib.sha256(token.encode()).hexdigest()
 
 
