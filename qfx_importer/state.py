@@ -1,4 +1,5 @@
 """Application state for qfx_importer."""
+import os
 import secrets
 from io import BytesIO
 from typing import Optional
@@ -109,7 +110,9 @@ class SetupState(AppState):
             if config.setup_complete:
                 self.error = "Setup already complete."
                 return
-            if not config.setup_token or config.setup_token != self.setup_token_input:
+            if not config.setup_token or not secrets.compare_digest(
+                config.setup_token, self.setup_token_input
+            ):
                 self.error = "Invalid setup token."
                 return
             config.app_password_hash = pwd_context.hash(self.new_password)
@@ -344,15 +347,19 @@ class ImportState(AppState):
 
             try:
                 ofx = ofxparse.OfxParser.parse(BytesIO(content))
-                accounts = ofx.account if isinstance(ofx.account, list) else [ofx.account]
+                raw_account = ofx.account
+                if raw_account is None:
+                    accounts = []
+                elif isinstance(raw_account, list):
+                    accounts = [a for a in raw_account if a is not None]
+                else:
+                    accounts = [raw_account]
             except Exception as exc:
                 self.import_errors.append(f"{filename}: parse error – {exc}")
                 continue
 
             try:
-                import os as _os
-
-                _os.makedirs(data_dir, exist_ok=True)
+                os.makedirs(data_dir, exist_ok=True)
                 with Actual(
                     base_url=base_url,
                     password=actual_password,
