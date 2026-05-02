@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# QFX Importer data
+data/*.db
+data/actual/
+.web/
+
